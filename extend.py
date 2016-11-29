@@ -1,86 +1,127 @@
 # coding: utf-8
-	
-# Base class for extending the functionality of Python
-# classes that cannot be subclassed (for example,
-# most view classes in the ui module of Pythonista).
-# 
-# Constructor returns the extended instance instead of
-# the extender, supporting chaining of extenders 
-# around a single target instance
-
-
 import types
+import sys
+import warnings
+
+class ExtenderMeta(type):
+  '''
+  Metaclass changed to accept all other types as instances of the Extender class.
+  
+  This enables us to call superclass methods in the Extender inheritance chain.
+  '''
+  def __instancecheck__(self, other):
+    return True
+
 
 class Extender(object):
-	def __new__(extender_subclass, target_instance, *args, **kwargs):
-		extender_instance = super(Extender, extender_subclass).__new__(extender_subclass)
-		for key in dir(extender_instance):
-			if key.startswith('__'): continue
-			value = getattr(extender_instance, key)
-			if callable(value):
-				setattr(target_instance, key, types.MethodType(value.__func__, target_instance))
-			else:
-				setattr(target_instance, key, value)
-		if isinstance(extender_subclass.__init__, types.MethodType):
-			extender_subclass.__init__.__func__(target_instance, *args, **kwargs)
-		return target_instance
-		
-# Extend the instance given as the first argument
-# with the methods and properties of the instances
-# given as the second and subsequent arguments
+  '''
+  Base class for extending the functionality of Python classes that cannot be subclassed (for example, most view classes in the ui module of Pythonista).
+  
+  Intended to be always subclassed.
+  '''
+  
+  __metaclass__ = ExtenderMeta
 
-'''
-def extend(target, *args):
-	for (source_class, *source_args, **source_kwargs) in args:
-		for key in dir(source):
-			if key.startswith('__'): continue
-			value = getattr(source, key)
-			if callable(value):
-				setattr(target, key, types.MethodType(value.__func__, target))
-			else:
-				setattr(target, key, value)
-	return target
-'''
-		
+  def __new__(extender_subclass, target_instance, *args, **kwargs):
+    '''
+    Custom constructor returns the extended instance instead of the extender, supporting chaining of extenders around a single target instance, and type checks that expect an instance of the extended class. 
+    '''
+    extender_instance = super(Extender, extender_subclass).__new__(extender_subclass)
+    for key in dir(extender_instance):
+      if key.startswith('__'): continue
+      if hasattr(target_instance, key):
+        warnings.warn('Target ' + str(type(target_instance)) + ' instance already has attribute ' + key)
+      value = getattr(extender_instance, key)
+      if callable(value):
+        setattr(target_instance, key, types.MethodType(value.__func__, target_instance))
+      else:
+        setattr(target_instance, key, value)
+    init_op = getattr(extender_subclass, '__init__', None)
+    if callable(init_op):
+      #if sys.version_info[0] < 3:
+        #init_op.__func__(target_instance, *args, **kwargs)
+      #else:
+      init_op(target_instance, *args, **kwargs)
+    return target_instance
+
 if __name__ == '__main__':
-		
-	class Concrete(Extender):
-		
-		one = 'one'
-		
-		def __init__(self, location):
-			self.two = 'two'
-			self.three = location
-			
-		def four(self):
-			return 'four'
-			
-	class MoreSpecific(Concrete):
-		
-		def __init__(self, five):
-			Concrete.__init__.__func__(self, 'three')
-			self.five = 'five'
-			self.set_six()
-			
-		def set_six(self):
-			self.six = 'six'
-			
-	class Target (object):
-		def __init__(self, zero):
-			self.zero = zero
-		
-	v = MoreSpecific(
-		Target('zero'),
-		'five'
-	)
-	print v
-	print (v.zero, v.one, v.two, v.three, v.four(), v.five, v.six)
-	
-	# zero - target basic parameter passing not broken
-	# one - superclass properties passed to target
-	# two - right 'self' in init
-	# three - can call overloaded method (note syntax)
-	# four - superclass methods are passed to target
-	# five - additional parameters passed to right init
-	# six - can call methods on 'self' in init
-		
+
+  class Target (object):
+    def __init__(self, zero):
+      self.zero = zero
+
+  class AddOn(Extender):
+
+    one = 'one'
+    nine = 'nine'
+
+    def __init__(self, location):
+      self.two = 'two'
+      self.three = location
+
+    def four(self):
+      return 'four'
+
+  class OtherParent(Extender):
+
+    nine = 'conflicting nine'
+    
+    def eight(self):
+      return 'eight'
+
+  class MoreSpecificAddOn(AddOn, OtherParent):
+
+    def __init__(self, five):
+      AddOn.__init__(self, 'three') # Cannot use super
+      self.five = five
+      self.set_six()
+
+    def set_six(self):
+      self.six = 'six'
+      
+  class AnotherAddOn(Extender):
+    
+    def __init__(self):
+      self.seven = 'seven'
+
+  v = AnotherAddOn(
+    MoreSpecificAddOn(
+      Target('zero'),
+      'five'
+    )
+  )
+  
+  # Right type maintained through the chain
+  assert type(v) == Target
+  
+  # Basic constructor parameters not impacted
+  assert v.zero == 'zero'
+  
+  # Superclass properties passed to target
+  assert v.one == 'one'
+  
+  # Extender subclass __init__ is called and has the right `self`
+  assert v.two == 'two'
+  
+  # Can call superclass overloaded methods in the Extender hierarchy (note syntax)
+  assert v.three == 'three'
+  
+  # Superclass methods are passed to target
+  assert v.four() == 'four'
+  
+  # Parameters beyond the target instance to right init
+  assert v.five == 'five'
+  
+  # Extender subclass init can call methods in the same class
+  assert v.six == 'six'
+  
+  # Extenders are chainable
+  assert v.seven == 'seven'
+  
+  # Multiple inheritance causes no problems
+  assert v.eight() == 'eight'
+  
+  # Regular multiple inheritance conflict resolution applies
+  assert v.nine == 'nine'
+  
+  print('All Extender tests passed')
