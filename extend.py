@@ -44,6 +44,35 @@ class Extender(object):
       init_op(target_instance, *args, **kwargs)
     return target_instance
 
+def combine(target_instance, extender_instance):
+    for key in dir(extender_instance):
+      if key.startswith('__'): continue
+      if hasattr(target_instance, key):
+        continue
+      value = getattr(extender_instance, key)
+      if callable(value):
+        def func(self, *args, extender_function_name=key, **kwargs):
+          return_value = getattr(extender_instance, extender_function_name)(*args, **kwargs)
+          return return_value
+        setattr(target_instance, key, types.MethodType(func, target_instance))
+    
+    def get_func(self, key):
+      print('get')
+      return getattr(extender_instance, key)
+                
+    setattr(type(target_instance), '__getattr__', types.MethodType(get_func, target_instance))
+    """
+      else:
+        def get_func(self, extender_attribute_name=key):
+          print('get')
+          return_value = getattr(extender_instance, extender_attribute_name)
+          return return_value
+        def set_func(self, value, extender_attribute_name=key):
+          print('set')
+          setattr(extender_instance, extender_attribute_name, value)
+        setattr(type(target_instance), key, property(get_func, set_func))
+    """
+
 if __name__ == '__main__':
 
   class Target (object):
@@ -125,3 +154,38 @@ if __name__ == '__main__':
   assert v.nine == 'nine'
   
   print('All Extender tests passed')
+  
+  
+  class Master(object):
+    def __init__(self):
+      self.one = 'one'
+    
+    def two(self):
+      return 'two'
+    
+  class Supplementer(object):
+    def __init__(self):
+      self.three = 'three'
+    
+    def four(self):
+      return 'four'
+      
+    def five(self):
+      return self.five
+      
+  m = Master()
+  s = Supplementer()
+  
+  combine(m, s)
+  
+  # Basics still work
+  assert m.one == 'one'
+  assert m.two() == 'two'
+  
+  # Proxied properties work
+  print(m.three)
+  
+  # Proxied methods work
+  assert(m.four() == 'four')
+
+  print('All combine tests passed')
