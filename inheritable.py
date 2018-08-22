@@ -18,7 +18,6 @@ class Extender(object):
   '''
   
   __metaclass__ = ExtenderMeta
-  _override_warning_active = False
 
   def __new__(extender_subclass, target_instance, *args, **kwargs):
     '''
@@ -27,8 +26,6 @@ class Extender(object):
     extender_instance = super(Extender, extender_subclass).__new__(extender_subclass)
     for key in dir(extender_instance):
       if key.startswith('__'): continue
-      if hasattr(target_instance, key) and Extender._override_warning_active:
-        warnings.warn('Target ' + str(type(target_instance)) + ' instance already has attribute ' + key)
       value = getattr(extender_instance, key)
       if callable(value) and type(value) is not type:
         setattr(target_instance, key, types.MethodType(value.__func__, target_instance))
@@ -67,11 +64,6 @@ class ExtenderSuper():
     supers = inspect.getmro(cls)
     for cls in supers[1:]:
       if '_pythonista_class' in cls.__dict__:
-        '''
-        if name == '__init__':
-          return partial(object.__getattribute__(self, '_special_init'), object.__getattribute__(self, '_target'))
-        else:
-        '''
         cls = getattr(cls, '_pythonista_class')
       attr = getattr(cls, name, None)
       if attr:
@@ -81,13 +73,6 @@ class ExtenderSuper():
           return attr
     raise AttributeError(f"'super' object has no attribute '{name}'")
     
-  def _special_init(self, target, **kwargs):
-    base_args = { argname: kwargs[argname] for argname in kwargs if hasattr(target, argname) }
-    for argname in base_args:
-      setattr(target, argname, base_args[argname])
-      del kwargs[argname]
-    if len(kwargs) > 0:
-      raise TypeError(f"Unrecognized keyword arguments for '{type(target)}': {[ key for key in kwargs ]}")
 
 # Generate classes for all ui view classes
 for key in ui.__dict__:
