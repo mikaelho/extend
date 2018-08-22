@@ -2,28 +2,12 @@ import ui
 import inspect, gc, types, sys
 from functools import partial
 
-class ExtenderMeta(type):
-  '''
-  Metaclass changed to accept all other types as instances of the Extender class.
-  This enables us to call superclass methods in the Extender inheritance chain.
-  '''
-  def __instancecheck__(self, other):
-    return True
 
+class BuiltinExtender():
 
-class Extender(object):
-  '''
-  Base class for extending the functionality of Python classes that cannot be subclassed (for example, most view classes in the ui module of Pythonista).
-  Intended to be always subclassed.
-  '''
-  
-  __metaclass__ = ExtenderMeta
-
-  def __new__(extender_subclass, target_instance, *args, **kwargs):
-    '''
-    Custom constructor returns the extended instance instead of the extender. 
-    '''
-    extender_instance = super(Extender, extender_subclass).__new__(extender_subclass)
+  def __new__(extender_subclass, *args, **kwargs):
+    target_instance = extender_subclass._builtin_class()
+    extender_instance = super(BuiltinExtender, extender_subclass).__new__(extender_subclass)
     for key in dir(extender_instance):
       if key.startswith('__'): continue
       value = getattr(extender_instance, key)
@@ -35,14 +19,6 @@ class Extender(object):
     if callable(init_op):
       init_op(target_instance, *args, **kwargs)
     return target_instance
-
-
-class PythonistaClass(Extender):
-
-  def __new__(extender_subclass, *args, **kwargs):
-    to_extend = extender_subclass._pythonista_class()
-    to_extend = super().__new__(extender_subclass, to_extend, *args, **kwargs)
-    return to_extend
 
   def super(self):
     return ExtenderSuper(self)
@@ -63,8 +39,8 @@ class ExtenderSuper():
     cls = getattr(inspect.getmodule(f), f.__qualname__.split('.<locals>', 1)[0].rsplit('.', 1)[0])
     supers = inspect.getmro(cls)
     for cls in supers[1:]:
-      if '_pythonista_class' in cls.__dict__:
-        cls = getattr(cls, '_pythonista_class')
+      if '_builtin_class' in cls.__dict__:
+        cls = getattr(cls, '_builtin_class')
       attr = getattr(cls, name, None)
       if attr:
         if callable(attr):
@@ -74,11 +50,14 @@ class ExtenderSuper():
     raise AttributeError(f"'super' object has no attribute '{name}'")
     
 
+def create_inheritable(class_name, target_type):
+  return type(class_name, (BuiltinExtender,), {'_builtin_class': target_type})
+
 # Generate classes for all ui view classes
 for key in ui.__dict__:
   value = getattr(ui, key)
   if type(value) == type:
-    globals()[key] = type(key, (PythonistaClass,), {'_pythonista_class': value})
+    globals()[key] = create_inheritable(key, value)
 
 
 if __name__ == '__main__':
@@ -125,9 +104,9 @@ if __name__ == '__main__':
 
 
   v = ui.View(background_color='grey')
-  b = MultiButton(tint_color='red', background_color='white', font=('Arial Rounded MT Bold', 30), title='Test button', margin=50, extra='Test')
-  v.present()
-  v.add_subview(b)
-  b.size_to_fit()
+  b = MultiButton(flex='RTBL', tint_color='red', background_color='white', font=('Arial Rounded MT Bold', 30), title='Test button', margin=50, extra='Test')
   b.center = v.center
+  b.size_to_fit()
+  v.add_subview(b)
+  v.present()
   print(b.extra)
